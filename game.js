@@ -9,7 +9,7 @@ const FALL_SPEEDUP_PER_LEVEL_MS = 55;
 const SCORE_PER_LETTER = 10;
 const LEVEL_SCORE_STEP = 250;
 const LETTERS = 'АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЫЬЭЮЯ';
-const SEED_WORDS = WORD_BANK;
+const WORD_PRESET_COLLECTION = WORD_PRESETS;
 const GAME_MODES = { STARS: 'stars', FALLING: 'falling' };
 
 const boardElement = document.querySelector('#board');
@@ -32,6 +32,7 @@ const healthValue = document.querySelector('#health-value');
 const wordDensitySelect = document.querySelector('#word-density-select');
 const wordDensitySetting = document.querySelector('#word-density-setting');
 const gameModeSelect = document.querySelector('#game-mode-select');
+const wordPresetSelect = document.querySelector('#word-preset-select');
 const recoveryFrequencySelect = document.querySelector('#recovery-frequency-select');
 const recoveryFrequencySetting = document.querySelector('#recovery-frequency-setting');
 const developerWords = document.querySelector('#developer-words');
@@ -82,6 +83,8 @@ const MAX_LEADERBOARD_ENTRIES = 10;
 let sessionId = '';
 let sessionStartedAt = '';
 let gameMode = gameModeSelect.value;
+let activeWordPreset = wordPresetSelect.value;
+let activeWordBank = WORD_PRESET_COLLECTION[activeWordPreset].words;
 let fallingWord = null;
 let healthPoints = MAX_HEALTH_POINTS;
 let fallingScore = 0;
@@ -98,6 +101,16 @@ function randomLetter() {
 
 function newCell(letter = randomLetter()) {
   return { id: nextCellId += 1, letter, star: Math.random() < 0.16 };
+}
+
+function activePresetTitle() {
+  return WORD_PRESET_COLLECTION[activeWordPreset].title;
+}
+
+function setActiveWordPreset(presetId) {
+  const preset = WORD_PRESET_COLLECTION[presetId] || WORD_PRESET_COLLECTION.common;
+  activeWordPreset = WORD_PRESET_COLLECTION[presetId] ? presetId : 'common';
+  activeWordBank = preset.words;
 }
 
 function createBoard() {
@@ -142,14 +155,14 @@ function wordPlacementOptions(word, reservedCells) {
 }
 
 function countSeedWords() {
-  return SEED_WORDS.filter((word) => findWord(word).length > 0).length;
+  return activeWordBank.filter((word) => findWord(word).length > 0).length;
 }
 
 function addGuaranteedWords(targetCount) {
   const reservedCells = new Set();
-  const existingWords = new Set(SEED_WORDS.filter((word) => findWord(word).length > 0));
+  const existingWords = new Set(activeWordBank.filter((word) => findWord(word).length > 0));
   existingWords.forEach((word) => findWord(word).forEach((cell) => reservedCells.add(cell)));
-  const missingWords = shuffle(SEED_WORDS.filter((word) => !existingWords.has(word)));
+  const missingWords = shuffle(activeWordBank.filter((word) => !existingWords.has(word)));
   const placements = [];
 
   for (const word of missingWords) {
@@ -220,8 +233,8 @@ function renderFallingBoard() {
 }
 
 function createFallingWord() {
-  const candidates = SEED_WORDS.filter((word) => word.length <= COLS && word !== lastFallingWord);
-  const wordPool = candidates.length ? candidates : SEED_WORDS.filter((word) => word.length <= COLS);
+  const candidates = activeWordBank.filter((word) => word.length <= COLS && word !== lastFallingWord);
+  const wordPool = candidates.length ? candidates : activeWordBank.filter((word) => word.length <= COLS);
   const word = wordPool[Math.floor(Math.random() * wordPool.length)];
   const canRecover = fallingWordsSinceRecovery >= recoveryFrequency - 1;
   const bonusType = canRecover && Math.random() < .45
@@ -293,7 +306,7 @@ function findWord(word) {
 
 function wordsOnBoard() {
   if (gameMode === GAME_MODES.FALLING) return fallingWord ? [fallingWord.word] : [];
-  return SEED_WORDS.filter((word) => findWordMatches(word).length > 0);
+  return activeWordBank.filter((word) => findWordMatches(word).length > 0);
 }
 
 function captureCellPositions() {
@@ -385,8 +398,8 @@ function formatColumns(columns) {
 function debugEntryText(entry) {
   switch (entry.type) {
     case 'round':
-      if (entry.mode === GAME_MODES.FALLING) return `Словопад: ${entry.health} ♥ на старте; бонус не чаще 1 из ${entry.recoveryFrequency} слов.`;
-      return `Старт: минимум ${entry.minimum} слов; на поле — ${entry.words.join(', ')}.`;
+      if (entry.mode === GAME_MODES.FALLING) return `Словопад, колода «${entry.presetTitle}»: ${entry.health} ♥ на старте; бонус не чаще 1 из ${entry.recoveryFrequency} слов.`;
+      return `Старт, колода «${entry.presetTitle}»: минимум ${entry.minimum} слов; на поле — ${entry.words.join(', ')}.`;
     case 'input':
       return `Ввод: «${entry.raw || '∅'}» → «${entry.word || '∅'}».`;
     case 'match':
@@ -519,6 +532,8 @@ function saveCompletedSession(won) {
     timeLeft,
     minimumWordCount,
     recoveryFrequency,
+    wordPreset: activeWordPreset,
+    wordPresetTitle: activePresetTitle(),
     finalBoard: activeBoardRows(),
     wordsOnBoard: wordsOnBoard(),
     events: debugLog.map((entry) => ({ ...entry })),
@@ -994,7 +1009,13 @@ function startGame() {
     setMessage('Напечатайте слово до того, как оно достигнет нижней границы.');
     updateHud();
     spawnFallingWord();
-    logDebug('round', { mode: GAME_MODES.FALLING, health: healthPoints / 2, recoveryFrequency });
+    logDebug('round', {
+      mode: GAME_MODES.FALLING,
+      health: healthPoints / 2,
+      recoveryFrequency,
+      preset: activeWordPreset,
+      presetTitle: activePresetTitle(),
+    });
     startFallingTimer();
     input.focus();
     return;
@@ -1007,6 +1028,8 @@ function startGame() {
     minimum: minimumWordCount,
     words: wordsOnBoard(),
     placements: initialPlacements.map((placement) => placement.word),
+    preset: activeWordPreset,
+    presetTitle: activePresetTitle(),
   });
   startTimer();
   input.focus();
@@ -1023,6 +1046,11 @@ wordDensitySelect.addEventListener('change', () => {
 gameModeSelect.addEventListener('change', () => {
   gameMode = gameModeSelect.value;
   startGame();
+});
+wordPresetSelect.addEventListener('change', () => {
+  setActiveWordPreset(wordPresetSelect.value);
+  startGame();
+  setMessage(`Выбрана колода «${activePresetTitle()}».`);
 });
 recoveryFrequencySelect.addEventListener('change', () => {
   recoveryFrequency = Number(recoveryFrequencySelect.value);
