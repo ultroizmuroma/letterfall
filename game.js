@@ -8,9 +8,14 @@ const MIN_FALL_STEP_MS = 420;
 const FALL_SPEEDUP_PER_LEVEL_MS = 55;
 const SCORE_PER_LETTER = 10;
 const LEVEL_SCORE_STEP = 250;
+const DECK_PREFETCH_THRESHOLD = 5;
 const LETTERS = 'АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЫЬЭЮЯ';
 const WORD_PRESET_COLLECTION = WORD_PRESETS;
 const GAME_MODES = { STARS: 'stars', FALLING: 'falling' };
+const runtimeQuery = new URLSearchParams(window.location.search);
+const isLocalRuntime = window.location.protocol === 'file:'
+  || ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const isProductionBuild = runtimeQuery.has('production') || (!isLocalRuntime && !runtimeQuery.has('dev'));
 
 const boardElement = document.querySelector('#board');
 const form = document.querySelector('#word-form');
@@ -49,6 +54,8 @@ const modifierDescription = document.querySelector('#modifier-description');
 const modifierBadge = document.querySelector('#modifier-badge');
 const rulesText = document.querySelector('#rules-text');
 const restartButton = document.querySelector('#restart-button');
+const pauseButton = document.querySelector('#pause-button');
+const soundButton = document.querySelector('#sound-button');
 const levelUpNotice = document.querySelector('#level-up-notice');
 const leaderboardCard = document.querySelector('#leaderboard-card');
 const leaderboardBody = document.querySelector('#leaderboard-body');
@@ -61,6 +68,12 @@ const leaderboardPrompt = document.querySelector('#leaderboard-prompt');
 const nicknameInput = document.querySelector('#nickname-input');
 const saveLeaderboardButton = document.querySelector('#save-leaderboard-button');
 const leaderboardSaveMessage = document.querySelector('#leaderboard-save-message');
+const yandexScorePrompt = document.querySelector('#yandex-score-prompt');
+const saveYandexScoreButton = document.querySelector('#save-yandex-score-button');
+const yandexScoreMessage = document.querySelector('#yandex-score-message');
+const startScreen = document.querySelector('#start-screen');
+const presetChoices = document.querySelector('#preset-choices');
+const startGameButton = document.querySelector('#start-game-button');
 
 let board = [];
 let stars = 0;
@@ -85,6 +98,7 @@ let sessionStartedAt = '';
 let gameMode = gameModeSelect.value;
 let activeWordPreset = wordPresetSelect.value;
 let activeWordBank = WORD_PRESET_COLLECTION[activeWordPreset].words;
+let selectedStartPreset = activeWordPreset;
 let fallingWord = null;
 let healthPoints = MAX_HEALTH_POINTS;
 let fallingScore = 0;
@@ -93,7 +107,42 @@ let fallingLevel = 1;
 let recoveryFrequency = Number(recoveryFrequencySelect.value);
 let fallingWordsSinceRecovery = 0;
 let lastFallingWord = '';
+let fallingWordDeck = [];
+let nextFallingWordDeck = [];
+let fallingDeckNumber = 0;
 let leaderboardSaved = false;
+let paused = false;
+
+function playSound(name) {
+  window.LetterfallSounds?.play(name);
+}
+
+function updateSoundButton() {
+  const enabled = window.LetterfallSounds?.isEnabled?.() ?? false;
+  soundButton.textContent = enabled ? '🔊' : '🔇';
+  soundButton.classList.toggle('is-muted', !enabled);
+  soundButton.setAttribute('aria-label', enabled ? 'Выключить звук' : 'Включить звук');
+  soundButton.title = enabled ? 'Выключить звук' : 'Включить звук';
+}
+
+function updatePauseButton() {
+  const canTogglePause = !finished;
+  pauseButton.disabled = !canTogglePause;
+  pauseButton.textContent = paused ? '▶' : '⏸';
+  pauseButton.setAttribute('aria-label', paused ? 'Продолжить игру' : 'Поставить игру на паузу');
+  pauseButton.title = paused ? 'Продолжить игру' : 'Поставить игру на паузу';
+}
+
+function requestGameplayFullscreen() {
+  const isTouchDevice = window.matchMedia?.('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
+  if (!isTouchDevice || document.fullscreenElement || document.webkitFullscreenElement) return;
+  const requestFullscreen = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+  try {
+    requestFullscreen?.call(document.documentElement)?.catch?.(() => {});
+  } catch {
+    // Некоторые браузеры запрещают fullscreen: игра остаётся в адаптивной сцене.
+  }
+}
 
 function randomLetter() {
   return LETTERS[Math.floor(Math.random() * LETTERS.length)];
@@ -111,6 +160,46 @@ function setActiveWordPreset(presetId) {
   const preset = WORD_PRESET_COLLECTION[presetId] || WORD_PRESET_COLLECTION.common;
   activeWordPreset = WORD_PRESET_COLLECTION[presetId] ? presetId : 'common';
   activeWordBank = preset.words;
+  wordPresetSelect.value = activeWordPreset;
+  selectedStartPreset = activeWordPreset;
+}
+
+function renderPresetChoices() {
+  presetChoices.replaceChildren();
+  Object.entries(WORD_PRESET_COLLECTION).forEach(([presetId, preset]) => {
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = `preset-choice${presetId === selectedStartPreset ? ' is-selected' : ''}`;
+    option.setAttribute('role', 'radio');
+    option.setAttribute('aria-checked', String(presetId === selectedStartPreset));
+    option.innerHTML = `<strong>${preset.title}</strong>`;
+    option.addEventListener('click', () => {
+      selectedStartPreset = presetId;
+      renderPresetChoices();
+    });
+    presetChoices.append(option);
+  });
+}
+
+function openStartScreen() {
+  clearInterval(timerId);
+  clearInterval(fallingTimerId);
+  finished = true;
+  locked = true;
+  input.disabled = true;
+  updatePauseButton();
+  modal.classList.add('is-hidden');
+  window.LetterfallYandex?.gameplayStop();
+  renderPresetChoices();
+  startScreen.classList.remove('is-hidden');
+}
+
+function startSelectedPreset() {
+  setActiveWordPreset(selectedStartPreset);
+  startScreen.classList.add('is-hidden');
+  requestGameplayFullscreen();
+  window.LetterfallSounds?.unlock();
+  startGame({ playStartSound: true });
 }
 
 function createBoard() {
@@ -232,10 +321,51 @@ function renderFallingBoard() {
   renderDeveloperWords();
 }
 
+function createShuffledFallingDeck(avoidFirstWord = lastFallingWord) {
+  const deck = shuffle(activeWordBank.filter((word) => word.length <= COLS));
+  if (avoidFirstWord && deck[0] === avoidFirstWord && deck.length > 1) {
+    const swapIndex = deck.findIndex((word) => word !== avoidFirstWord);
+    [deck[0], deck[swapIndex]] = [deck[swapIndex], deck[0]];
+  }
+  return deck;
+}
+
+function prepareNextFallingDeck() {
+  if (nextFallingWordDeck.length) return;
+  const previousDeckLastWord = fallingWordDeck[fallingWordDeck.length - 1] || lastFallingWord;
+  nextFallingWordDeck = createShuffledFallingDeck(previousDeckLastWord);
+  logDebug('deck_shuffle', {
+    deck: fallingDeckNumber + 1,
+    size: nextFallingWordDeck.length,
+    remaining: fallingWordDeck.length,
+  });
+}
+
+function activateNextFallingDeck() {
+  prepareNextFallingDeck();
+  fallingWordDeck = nextFallingWordDeck;
+  nextFallingWordDeck = [];
+  fallingDeckNumber += 1;
+  logDebug('deck_start', { deck: fallingDeckNumber, size: fallingWordDeck.length });
+}
+
+function resetFallingDecks() {
+  fallingWordDeck = [];
+  nextFallingWordDeck = [];
+  fallingDeckNumber = 0;
+  prepareNextFallingDeck();
+  activateNextFallingDeck();
+}
+
+function takeWordFromFallingDeck() {
+  if (!fallingWordDeck.length) activateNextFallingDeck();
+  const word = fallingWordDeck.shift();
+  if (fallingWordDeck.length <= DECK_PREFETCH_THRESHOLD) prepareNextFallingDeck();
+  return word;
+}
+
 function createFallingWord() {
-  const candidates = activeWordBank.filter((word) => word.length <= COLS && word !== lastFallingWord);
-  const wordPool = candidates.length ? candidates : activeWordBank.filter((word) => word.length <= COLS);
-  const word = wordPool[Math.floor(Math.random() * wordPool.length)];
+  const word = takeWordFromFallingDeck();
   const canRecover = fallingWordsSinceRecovery >= recoveryFrequency - 1;
   const bonusType = canRecover && Math.random() < .45
     ? Math.random() < .5 ? 'full' : 'half'
@@ -261,6 +391,8 @@ function spawnFallingWord() {
     bonus: fallingWord.bonusType,
     level: fallingLevel,
     stepMs: currentFallStepMs(),
+    deck: fallingDeckNumber,
+    deckRemaining: fallingWordDeck.length,
   });
   renderFallingBoard();
 }
@@ -398,7 +530,7 @@ function formatColumns(columns) {
 function debugEntryText(entry) {
   switch (entry.type) {
     case 'round':
-      if (entry.mode === GAME_MODES.FALLING) return `Словопад, колода «${entry.presetTitle}»: ${entry.health} ♥ на старте; бонус не чаще 1 из ${entry.recoveryFrequency} слов.`;
+      if (entry.mode === GAME_MODES.FALLING) return `Словобой: скоростная печать, колода «${entry.presetTitle}»: ${entry.health} ♥ на старте; бонус не чаще 1 из ${entry.recoveryFrequency} слов.`;
       return `Старт, колода «${entry.presetTitle}»: минимум ${entry.minimum} слов; на поле — ${entry.words.join(', ')}.`;
     case 'input':
       return `Ввод: «${entry.raw || '∅'}» → «${entry.word || '∅'}».`;
@@ -417,12 +549,16 @@ function debugEntryText(entry) {
     case 'modifier':
       return entry.letter ? `Включён запрет буквы «${entry.letter}».` : 'Запрет буквы отключён.';
     case 'finish':
-      if (entry.mode === GAME_MODES.FALLING) return entry.won ? `Словопад пройден: ${entry.score} очков.` : `Словопад завершён: ${entry.score} очков, уровень ${entry.level}.`;
+      if (entry.mode === GAME_MODES.FALLING) return entry.won ? `Словобой: скоростная печать пройден: ${entry.score} очков.` : `Словобой: скоростная печать завершён: ${entry.score} очков, уровень ${entry.level}.`;
       return entry.won ? `Раунд выигран: ${entry.stars} ★.` : `Время вышло: ${entry.stars} ★.`;
     case 'session_saved':
       return `Сессия сохранена: ${entry.events} событий.`;
     case 'falling_spawn':
-      return `Появилось «${entry.word}» в колонке ${entry.column + 1}${entry.bonus ? `, бонус: ${entry.bonus === 'full' ? '♥' : '◐'}` : ''}; ур. ${entry.level}, шаг ${entry.stepMs} мс.`;
+      return `Появилось «${entry.word}» в колонке ${entry.column + 1}${entry.bonus ? `, бонус: ${entry.bonus === 'full' ? '♥' : '◐'}` : ''}; колода ${entry.deck}, осталось ${entry.deckRemaining}, ур. ${entry.level}, шаг ${entry.stepMs} мс.`;
+    case 'deck_shuffle':
+      return `Перемешана следующая колода ${entry.deck}: ${entry.size} слов. В текущей осталось ${entry.remaining}.`;
+    case 'deck_start':
+      return `Началась колода ${entry.deck}: ${entry.size} слов.`;
     case 'falling_match':
       return `Поймано «${entry.word}»: +${entry.points} очков${entry.bonus ? `, восстановлено ${entry.bonus === 'full' ? '1' : '½'} ♥` : ''}. Всего ${entry.score}.`;
     case 'life_lost':
@@ -455,6 +591,7 @@ function renderDebugLog() {
 }
 
 function logDebug(type, data = {}) {
+  if (isProductionBuild) return;
   const elapsed = gameMode === GAME_MODES.FALLING && sessionStartedAt
     ? Math.max(0, Math.floor((Date.now() - new Date(sessionStartedAt).getTime()) / 1000))
     : ROUND_SECONDS - timeLeft;
@@ -466,12 +603,13 @@ function logDebug(type, data = {}) {
   debugLog.push(entry);
   if (debugLog.length > MAX_DEBUG_ENTRIES) debugLog.shift();
   window.__letterfallDebugLog = debugLog;
-  console.info('[Буквопад]', entry);
+  console.info('[Словобой: скоростная печать]', entry);
   renderDebugLog();
 }
 
 function resetDebugLog() {
   debugLog = [];
+  if (isProductionBuild) return;
   window.__letterfallDebugLog = debugLog;
   renderDebugLog();
 }
@@ -486,6 +624,7 @@ function readCompletedSessions() {
 }
 
 function renderCompletedSessions(sessions = readCompletedSessions()) {
+  if (isProductionBuild) return;
   window.__letterfallCompletedSessions = sessions;
   completedSessionsCount.textContent = sessions.length;
   completedSessionsElement.replaceChildren();
@@ -504,7 +643,7 @@ function renderCompletedSessions(sessions = readCompletedSessions()) {
       ? `${session.fallingScore || 0} очков · ${session.fallingWordsCaught} слов`
       : `${session.fallingScore || 0} слов`;
     const summary = session.mode === GAME_MODES.FALLING
-      ? `${session.won ? 'Словопад пройден' : 'Словопад'} · ${fallingSummary} · ${session.events.length} событий.`
+      ? `${session.won ? 'Словобой: скоростная печать пройден' : 'Словобой: скоростная печать'} · ${fallingSummary} · ${session.events.length} событий.`
       : `${session.won ? 'Победа' : 'Время'} · ${session.stars}/${STAR_TARGET} ★ · ${session.events.length} событий.`;
     item.append(time, summary);
     completedSessionsElement.append(item);
@@ -516,6 +655,7 @@ function createSessionId() {
 }
 
 function saveCompletedSession(won) {
+  if (isProductionBuild) return;
   logDebug('session_saved', { events: debugLog.length + 1 });
   const session = {
     id: sessionId,
@@ -583,6 +723,11 @@ function renderLeaderboard(entries = readLeaderboard()) {
   });
 }
 
+async function loadYandexLeaderboard() {
+  const entries = await window.LetterfallYandex?.getLeaderboard?.();
+  if (entries?.length) renderLeaderboard(entries);
+}
+
 function updateCurrentSessionLeaderboard(entry) {
   const sessions = readCompletedSessions();
   const session = sessions.find((item) => item.id === sessionId);
@@ -631,9 +776,42 @@ function saveLeaderboardScore() {
   renderLeaderboard(entries);
 }
 
+async function saveYandexLeaderboardScore() {
+  if (gameMode !== GAME_MODES.FALLING || !finished || healthPoints > 0) return;
+  saveYandexScoreButton.disabled = true;
+  yandexScoreMessage.textContent = 'Сохраняем результат…';
+  const result = await window.LetterfallYandex?.authorizeAndSaveScore?.(fallingScore, fallingLevel);
+  if (!result?.saved) {
+    yandexScoreMessage.textContent = result?.reason || 'Рейтинг Яндекса пока недоступен.';
+    saveYandexScoreButton.disabled = false;
+    return;
+  }
+  yandexScoreMessage.textContent = 'Результат сохранён в общем рейтинге.';
+  logDebug('leaderboard_saved', { nickname: 'Яндекс ID', score: fallingScore, level: fallingLevel });
+  loadYandexLeaderboard();
+}
+
 function setMessage(text, type = '') {
   message.textContent = text;
   message.className = `message${type ? ` is-${type}` : ''}`;
+}
+
+function setPaused(value) {
+  if (paused === value || finished) return;
+  paused = value;
+  input.disabled = paused || locked;
+  if (paused) {
+    window.LetterfallYandex?.gameplayStop();
+    window.LetterfallSounds?.pause();
+    setMessage('Игра на паузе.', 'error');
+    updatePauseButton();
+    return;
+  }
+  window.LetterfallYandex?.gameplayStart();
+  window.LetterfallSounds?.resume();
+  setMessage('Игра продолжена.');
+  updatePauseButton();
+  if (!locked) input.focus();
 }
 
 function updateHud() {
@@ -670,6 +848,7 @@ function showLevelUp(level) {
   levelUpNotice.textContent = `Новый уровень! ${level}`;
   levelUpNotice.classList.remove('is-hidden');
   levelUpTimerId = setTimeout(() => levelUpNotice.classList.add('is-hidden'), 1800);
+  playSound('level');
 }
 
 function updateModeUi() {
@@ -685,7 +864,7 @@ function updateModeUi() {
   recoveryFrequencySetting.classList.toggle('is-hidden', !isFallingMode);
   leaderboardCard.classList.toggle('is-hidden', !isFallingMode);
   if (isFallingMode) {
-    goalEyebrow.textContent = 'Режим словопада';
+    goalEyebrow.textContent = `Словобой: скоростная печать · ${activePresetTitle()}`;
     goalTitle.textContent = 'Не дайте словам упасть';
     rulesText.textContent = 'Введите падающее слово до нижней границы. За каждую букву — 10 очков; с уровнем скорость растёт.';
     document.querySelector('.word-label').textContent = 'Напечатайте падающее слово';
@@ -701,7 +880,7 @@ function updateModeUi() {
 }
 
 function showHint() {
-  if (locked || finished) return;
+  if (locked || finished || paused) return;
   const words = wordsOnBoard();
   const candidates = words.filter((word) => word !== lastHint);
   const word = (candidates.length ? candidates : words)[Math.floor(Math.random() * (candidates.length ? candidates.length : words.length))];
@@ -722,7 +901,7 @@ function showHint() {
 }
 
 function toggleModifier() {
-  if (locked || finished) return;
+  if (locked || finished || paused) return;
   if (bannedLetter) {
     bannedLetter = null;
     modifierTitle.textContent = 'Свободная игра';
@@ -813,7 +992,7 @@ function collapseBoard(indices, word) {
 }
 
 function advanceFallingWord() {
-  if (finished || locked || gameMode !== GAME_MODES.FALLING || !fallingWord) return;
+  if (finished || locked || paused || gameMode !== GAME_MODES.FALLING || !fallingWord) return;
   if (fallingWord.row < ROWS - 1) {
     fallingWord.row += 1;
     renderFallingBoard();
@@ -822,6 +1001,7 @@ function advanceFallingWord() {
   const missedWord = fallingWord.word;
   fallingWord = null;
   healthPoints = Math.max(0, healthPoints - 2);
+  playSound('lost');
   updateHud();
   logDebug('life_lost', { word: missedWord, health: healthPoints });
   if (healthPoints === 0) {
@@ -848,6 +1028,7 @@ function submitFallingWord(rawWord, word) {
   fallingLevel = levelForScore(fallingScore);
   if (caughtWord.bonusType === 'full') healthPoints = Math.min(MAX_HEALTH_POINTS, healthPoints + 2);
   if (caughtWord.bonusType === 'half') healthPoints = Math.min(MAX_HEALTH_POINTS, healthPoints + 1);
+  playSound(caughtWord.bonusType ? 'heal' : 'correct');
   input.value = '';
   updateHud();
   logDebug('falling_match', {
@@ -878,7 +1059,8 @@ function submitFallingWord(rawWord, word) {
 
 function submitWord(event) {
   event.preventDefault();
-  if (locked || finished) return;
+  window.LetterfallSounds?.unlock();
+  if (locked || finished || paused) return;
   const rawWord = input.value;
   const word = normalizeWord(rawWord);
   input.value = word;
@@ -926,6 +1108,9 @@ function finish(won) {
   clearInterval(timerId);
   clearInterval(fallingTimerId);
   input.disabled = true;
+  window.LetterfallYandex?.gameplayStop();
+  updatePauseButton();
+  playSound(won ? 'level' : 'finish');
   logDebug('finish', { won, stars, score: fallingScore, health: healthPoints, level: fallingLevel, mode: gameMode });
   saveCompletedSession(won);
   resultIcon.textContent = won ? '★' : gameMode === GAME_MODES.FALLING ? '♥' : '⌛';
@@ -941,11 +1126,15 @@ function finish(won) {
       : `Собрано ${stars} из ${STAR_TARGET} звёзд. Попробуйте находить слова подлиннее — так проще поймать звёзды.`;
   const shouldOfferLeaderboard = gameMode === GAME_MODES.FALLING && healthPoints === 0;
   leaderboardPrompt.classList.toggle('is-hidden', !shouldOfferLeaderboard);
+  const shouldOfferYandexLeaderboard = shouldOfferLeaderboard && Boolean(window.LetterfallYandex?.isPlatform?.());
+  yandexScorePrompt.classList.toggle('is-hidden', !shouldOfferYandexLeaderboard);
   if (shouldOfferLeaderboard) {
     nicknameInput.value = '';
     nicknameInput.disabled = false;
     saveLeaderboardButton.disabled = false;
     leaderboardSaveMessage.textContent = '';
+    yandexScoreMessage.textContent = '';
+    saveYandexScoreButton.disabled = false;
   }
   modal.classList.remove('is-hidden');
   if (shouldOfferLeaderboard) setTimeout(() => nicknameInput.focus(), 0);
@@ -954,7 +1143,7 @@ function finish(won) {
 function startTimer() {
   clearInterval(timerId);
   timerId = setInterval(() => {
-    if (finished || locked) return;
+    if (finished || locked || paused) return;
     timeLeft -= 1;
     updateHud();
     if (timeLeft <= 0) finish(false);
@@ -966,7 +1155,7 @@ function startFallingTimer() {
   fallingTimerId = setInterval(advanceFallingWord, currentFallStepMs());
 }
 
-function startGame() {
+function startGame({ playStartSound = false } = {}) {
   clearInterval(timerId);
   clearInterval(fallingTimerId);
   clearTimeout(levelUpTimerId);
@@ -985,14 +1174,20 @@ function startGame() {
   recoveryFrequency = Number(recoveryFrequencySelect.value);
   fallingWordsSinceRecovery = 0;
   lastFallingWord = '';
+  fallingWordDeck = [];
+  nextFallingWordDeck = [];
+  fallingDeckNumber = 0;
   leaderboardSaved = false;
+  paused = false;
   sessionId = createSessionId();
   sessionStartedAt = new Date().toISOString();
   resetDebugLog();
   renderCompletedSessions();
   renderLeaderboard();
+  loadYandexLeaderboard();
   input.value = '';
   input.disabled = false;
+  updatePauseButton();
   hintText.textContent = 'Лампочка покажет первую букву одного слова.';
   hintButton.disabled = false;
   modifierTitle.textContent = 'Свободная игра';
@@ -1002,12 +1197,14 @@ function startGame() {
   modifierButton.textContent = 'Добавить запрет';
   modal.classList.add('is-hidden');
   leaderboardPrompt.classList.add('is-hidden');
+  yandexScorePrompt.classList.add('is-hidden');
   levelUpNotice.classList.add('is-hidden');
   updateModeUi();
   if (gameMode === GAME_MODES.FALLING) {
     board = [];
     setMessage('Напечатайте слово до того, как оно достигнет нижней границы.');
     updateHud();
+    resetFallingDecks();
     spawnFallingWord();
     logDebug('round', {
       mode: GAME_MODES.FALLING,
@@ -1017,6 +1214,8 @@ function startGame() {
       presetTitle: activePresetTitle(),
     });
     startFallingTimer();
+    window.LetterfallYandex?.gameplayStart();
+    if (playStartSound) playSound('start');
     input.focus();
     return;
   }
@@ -1032,12 +1231,15 @@ function startGame() {
     presetTitle: activePresetTitle(),
   });
   startTimer();
+  window.LetterfallYandex?.gameplayStart();
+  if (playStartSound) playSound('start');
   input.focus();
 }
 
 form.addEventListener('submit', submitWord);
 hintButton.addEventListener('click', showHint);
 modifierButton.addEventListener('click', toggleModifier);
+pauseButton.addEventListener('click', () => setPaused(!paused));
 wordDensitySelect.addEventListener('change', () => {
   minimumWordCount = Number(wordDensitySelect.value);
   startGame();
@@ -1058,14 +1260,43 @@ recoveryFrequencySelect.addEventListener('change', () => {
   setMessage(`Бонус жизни будет появляться не чаще 1 раза на ${recoveryFrequency} слов.`);
 });
 saveLeaderboardButton.addEventListener('click', saveLeaderboardScore);
+saveYandexScoreButton.addEventListener('click', saveYandexLeaderboardScore);
+soundButton.addEventListener('click', () => {
+  const enabled = !(window.LetterfallSounds?.isEnabled?.() ?? false);
+  window.LetterfallSounds?.setEnabled(enabled);
+  updateSoundButton();
+  if (enabled) playSound('start');
+});
 nicknameInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') {
     event.preventDefault();
     saveLeaderboardScore();
   }
 });
-restartButton.addEventListener('click', startGame);
-playAgainButton.addEventListener('click', startGame);
-document.querySelector('.brand').addEventListener('click', (event) => { event.preventDefault(); startGame(); });
+restartButton.addEventListener('click', () => {
+  window.LetterfallSounds?.unlock();
+  startGame({ playStartSound: true });
+});
+playAgainButton.addEventListener('click', async () => {
+  if (playAgainButton.disabled) return;
+  playAgainButton.disabled = true;
+  requestGameplayFullscreen();
+  await window.LetterfallYandex?.showFullscreenAdv?.();
+  playAgainButton.disabled = false;
+  window.LetterfallSounds?.unlock();
+  startGame({ playStartSound: true });
+});
+startGameButton.addEventListener('click', startSelectedPreset);
+boardElement.addEventListener('contextmenu', (event) => event.preventDefault());
+window.addEventListener('letterfall:yandex-ready', loadYandexLeaderboard);
+window.addEventListener('letterfall:yandex-pause', () => setPaused(true));
+window.addEventListener('letterfall:yandex-resume', () => setPaused(false));
+document.querySelector('.topbar .brand').addEventListener('click', (event) => {
+  event.preventDefault();
+  openStartScreen();
+});
 
-startGame();
+document.body.classList.toggle('is-production', isProductionBuild);
+updateSoundButton();
+openStartScreen();
+window.LetterfallYandex?.gameReady();

@@ -2,28 +2,33 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#191836" />
-    <title>Буквопад — словесная головоломка</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Unbounded:wght@600;700;800&display=swap"
-      rel="stylesheet"
-    />
-    <link rel="stylesheet" href="styles.css" />
+    <meta name="description" content="Словобой: скоростная печать — динамичная словесная головоломка с падающими словами, уровнями и рекордами." />
+    <meta property="og:title" content="Словобой: скоростная печать" />
+    <meta property="og:description" content="Ловите падающие слова, набирайте очки и ставьте рекорды." />
+    <title>Словобой: скоростная печать — словесная головоломка</title>
+    <link rel="stylesheet" href="styles.css?v=20260803" />
+    <script src="yandex-games.js"></script>
+    <script src="sounds.js"></script>
   </head>
   <body>
+    <div class="orientation-notice" role="status">
+      <span aria-hidden="true">↻</span>
+      <p>Поверните устройство вертикально, чтобы продолжить.</p>
+    </div>
     <main class="game-shell">
-      <section class="game-card" aria-label="Игра Буквопад">
+      <section class="game-card" aria-label="Игра Словобой: скоростная печать">
         <header class="topbar">
           <a class="brand" href="#" aria-label="Начать новую игру">
-            <span class="brand-mark">Б</span>
-            <span>Буквопад</span>
+            <span class="brand-mark">С</span>
+            <span class="brand-name">Словобой: скоростная печать</span>
           </a>
-          <button id="restart-button" class="icon-button" type="button" aria-label="Начать заново" title="Начать заново">
-            ↻
-          </button>
+          <div class="topbar-actions">
+            <button id="pause-button" class="icon-button" type="button" aria-label="Поставить игру на паузу" title="Поставить игру на паузу">⏸</button>
+            <button id="sound-button" class="icon-button sound-button" type="button" aria-label="Выключить звук" title="Выключить звук">🔊</button>
+            <button id="restart-button" class="icon-button" type="button" aria-label="Начать заново" title="Начать заново">↻</button>
+          </div>
         </header>
 
         <div class="game-layout">
@@ -115,7 +120,7 @@
               <p class="eyebrow">Для разработчика</p>
               <label for="game-mode-select">Режим игры</label>
               <select id="game-mode-select">
-                <option value="falling" selected>Словопад</option>
+                <option value="falling" selected>Словобой: скоростная печать</option>
                 <option value="stars">Звездопад</option>
               </select>
               <div id="word-preset-setting">
@@ -174,7 +179,7 @@
     <div id="result-modal" class="modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="result-title">
       <div class="modal-card">
         <div id="result-icon" class="result-icon">★</div>
-        <p class="eyebrow">Раунд завершён</p>
+        <p class="eyebrow">Словобой: скоростная печать · раунд завершён</p>
         <h2 id="result-title">Отличная работа!</h2>
         <p id="result-copy"></p>
         <div id="leaderboard-prompt" class="leaderboard-prompt is-hidden">
@@ -185,11 +190,27 @@
           </div>
           <p id="leaderboard-save-message" class="leaderboard-save-message" aria-live="polite"></p>
         </div>
+        <div id="yandex-score-prompt" class="yandex-score-prompt is-hidden">
+          <p>Войдите с Яндекс ID, чтобы сохранить результат в общем рейтинге.</p>
+          <button id="save-yandex-score-button" class="text-button" type="button">Войти и сохранить в рейтинге Яндекса</button>
+          <p id="yandex-score-message" class="leaderboard-save-message" aria-live="polite"></p>
+        </div>
         <button id="play-again-button" class="submit-button modal-button" type="button">Сыграть ещё раз</button>
       </div>
     </div>
 
+    <section id="start-screen" class="start-screen is-hidden" aria-labelledby="start-title">
+      <div class="start-card">
+        <div class="brand start-brand"><span class="brand-mark">С</span><span class="brand-name">Словобой: скоростная печать</span></div>
+        <p class="eyebrow">Тренировка слов</p>
+        <h1 id="start-title">Выберите тему</h1>
+        <p class="start-copy">Поймайте падающее слово до нижней границы. Чем длиннее слово, тем больше очков.</p>
+        <div id="preset-choices" class="preset-choices" role="radiogroup" aria-label="Тематическая колода"></div>
+        <button id="start-game-button" class="submit-button start-button" type="button">Начать игру</button>
+      </div>
+    </section>
+
     <script src="word-bank.js"></script>
-    <script src="game.js"></script>
+    <script src="game.js?v=20260801"></script>
   </body>
 </html>
