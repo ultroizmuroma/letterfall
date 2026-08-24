@@ -69,8 +69,11 @@ const nicknameInput = document.querySelector('#nickname-input');
 const saveLeaderboardButton = document.querySelector('#save-leaderboard-button');
 const leaderboardSaveMessage = document.querySelector('#leaderboard-save-message');
 const yandexScorePrompt = document.querySelector('#yandex-score-prompt');
+const yandexScoreCopy = document.querySelector('#yandex-score-copy');
 const saveYandexScoreButton = document.querySelector('#save-yandex-score-button');
 const yandexScoreMessage = document.querySelector('#yandex-score-message');
+const gameRoot = document.querySelector('#game-root');
+const bootMessage = document.querySelector('#boot-message');
 const startScreen = document.querySelector('#start-screen');
 const presetChoices = document.querySelector('#preset-choices');
 const startGameButton = document.querySelector('#start-game-button');
@@ -111,6 +114,7 @@ let fallingWordDeck = [];
 let nextFallingWordDeck = [];
 let fallingDeckNumber = 0;
 let leaderboardSaved = false;
+let platformLeaderboardSaved = false;
 let paused = false;
 
 function playSound(name) {
@@ -777,17 +781,21 @@ function saveLeaderboardScore() {
 }
 
 async function saveYandexLeaderboardScore() {
-  if (gameMode !== GAME_MODES.FALLING || !finished || healthPoints > 0) return;
+  if (platformLeaderboardSaved || gameMode !== GAME_MODES.FALLING || !finished || healthPoints > 0) return;
   saveYandexScoreButton.disabled = true;
   yandexScoreMessage.textContent = 'Сохраняем результат…';
   const result = await window.LetterfallYandex?.authorizeAndSaveScore?.(fallingScore, fallingLevel);
   if (!result?.saved) {
-    yandexScoreMessage.textContent = result?.reason || 'Рейтинг Яндекса пока недоступен.';
+    yandexScoreMessage.textContent = result?.reason || 'Общий рейтинг пока недоступен.';
     saveYandexScoreButton.disabled = false;
     return;
   }
+  platformLeaderboardSaved = true;
+  yandexScoreCopy.classList.add('is-hidden');
+  saveYandexScoreButton.textContent = 'Результат сохранён';
+  saveYandexScoreButton.disabled = true;
   yandexScoreMessage.textContent = 'Результат сохранён в общем рейтинге.';
-  logDebug('leaderboard_saved', { nickname: 'Яндекс ID', score: fallingScore, level: fallingLevel });
+  logDebug('leaderboard_saved', { nickname: 'Общий рейтинг', score: fallingScore, level: fallingLevel });
   loadYandexLeaderboard();
 }
 
@@ -1125,19 +1133,24 @@ function finish(won) {
       ? `Вы собрали ${stars} из ${STAR_TARGET} звёзд и успели до конца раунда.`
       : `Собрано ${stars} из ${STAR_TARGET} звёзд. Попробуйте находить слова подлиннее — так проще поймать звёзды.`;
   const shouldOfferLeaderboard = gameMode === GAME_MODES.FALLING && healthPoints === 0;
-  leaderboardPrompt.classList.toggle('is-hidden', !shouldOfferLeaderboard);
   const shouldOfferYandexLeaderboard = shouldOfferLeaderboard && Boolean(window.LetterfallYandex?.isPlatform?.());
+  const shouldOfferLocalLeaderboard = shouldOfferLeaderboard && !shouldOfferYandexLeaderboard;
+  leaderboardPrompt.classList.toggle('is-hidden', !shouldOfferLocalLeaderboard);
   yandexScorePrompt.classList.toggle('is-hidden', !shouldOfferYandexLeaderboard);
-  if (shouldOfferLeaderboard) {
+  if (shouldOfferLocalLeaderboard) {
     nicknameInput.value = '';
     nicknameInput.disabled = false;
     saveLeaderboardButton.disabled = false;
     leaderboardSaveMessage.textContent = '';
+  }
+  if (shouldOfferYandexLeaderboard) {
+    yandexScoreCopy.classList.remove('is-hidden');
     yandexScoreMessage.textContent = '';
     saveYandexScoreButton.disabled = false;
+    saveYandexScoreButton.textContent = 'Войти и сохранить результат';
   }
   modal.classList.remove('is-hidden');
-  if (shouldOfferLeaderboard) setTimeout(() => nicknameInput.focus(), 0);
+  if (shouldOfferLocalLeaderboard) setTimeout(() => nicknameInput.focus(), 0);
 }
 
 function startTimer() {
@@ -1178,6 +1191,7 @@ function startGame({ playStartSound = false } = {}) {
   nextFallingWordDeck = [];
   fallingDeckNumber = 0;
   leaderboardSaved = false;
+  platformLeaderboardSaved = false;
   paused = false;
   sessionId = createSessionId();
   sessionStartedAt = new Date().toISOString();
@@ -1287,7 +1301,11 @@ playAgainButton.addEventListener('click', async () => {
   startGame({ playStartSound: true });
 });
 startGameButton.addEventListener('click', startSelectedPreset);
-boardElement.addEventListener('contextmenu', (event) => event.preventDefault());
+document.addEventListener('contextmenu', (event) => event.preventDefault());
+document.addEventListener('selectstart', (event) => {
+  if (event.target.matches('input, textarea')) return;
+  event.preventDefault();
+});
 window.addEventListener('letterfall:yandex-ready', loadYandexLeaderboard);
 window.addEventListener('letterfall:yandex-pause', () => setPaused(true));
 window.addEventListener('letterfall:yandex-resume', () => setPaused(false));
@@ -1296,7 +1314,21 @@ document.querySelector('.topbar .brand').addEventListener('click', (event) => {
   openStartScreen();
 });
 
-document.body.classList.toggle('is-production', isProductionBuild);
-updateSoundButton();
-openStartScreen();
-window.LetterfallYandex?.gameReady();
+async function bootGame() {
+  const platform = await window.LetterfallYandex?.whenInitialized?.()
+    || { status: 'ready', isPlatform: false, language: 'ru' };
+
+  if (platform.status !== 'ready') {
+    bootMessage.textContent = 'Не удалось подготовить игру. Перезагрузите страницу.';
+    return;
+  }
+
+  document.body.classList.toggle('is-production', isProductionBuild);
+  updateSoundButton();
+  openStartScreen();
+  gameRoot.inert = false;
+  document.body.classList.remove('is-booting');
+  window.LetterfallYandex?.gameReady();
+}
+
+bootGame();

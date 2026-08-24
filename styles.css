@@ -35,7 +35,7 @@ body {
 button, input { font: inherit; }
 button { cursor: pointer; }
 
-.game-card, .game-card * {
+#game-root, #game-root * {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
@@ -43,6 +43,12 @@ button { cursor: pointer; }
 
 .board, .topbar, .goal-row, .input-row, .modal-card, .start-card { touch-action: manipulation; }
 #word-input, #nickname-input { -webkit-user-select: text; user-select: text; touch-action: auto; }
+
+.boot-screen { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 24px; color: var(--ink); background: radial-gradient(circle at 50% 18%, rgba(141,92,255,.32), transparent 24rem), #111026; }
+.boot-card { display: grid; justify-items: center; gap: 16px; font-family: Unbounded, Arial, sans-serif; font-size: 13px; font-weight: 700; text-align: center; }
+.boot-card .brand-mark { width: 52px; height: 52px; border-radius: 16px; font-size: 27px; }
+.boot-card p { margin: 0; }
+body:not(.is-booting) .boot-screen { display: none; }
 
 .game-shell {
   height: 100dvh;

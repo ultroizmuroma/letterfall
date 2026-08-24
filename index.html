@@ -12,7 +12,14 @@
     <script src="yandex-games.js"></script>
     <script src="sounds.js"></script>
   </head>
-  <body>
+  <body class="is-booting">
+    <div id="boot-screen" class="boot-screen" role="status" aria-live="polite">
+      <div class="boot-card">
+        <div class="brand-mark" aria-hidden="true">С</div>
+        <p id="boot-message">Загружаем игру…</p>
+      </div>
+    </div>
+    <div id="game-root" inert>
     <div class="orientation-notice" role="status">
       <span aria-hidden="true">↻</span>
       <p>Поверните устройство вертикально, чтобы продолжить.</p>
@@ -75,7 +82,7 @@
                   inputmode="text"
                   placeholder="Например, КОТ"
                   aria-describedby="message"
-                  autofocus
+                  disabled
                 />
                 <button class="submit-button" type="submit">Проверить <span>→</span></button>
               </div>
@@ -191,8 +198,8 @@
           <p id="leaderboard-save-message" class="leaderboard-save-message" aria-live="polite"></p>
         </div>
         <div id="yandex-score-prompt" class="yandex-score-prompt is-hidden">
-          <p>Войдите с Яндекс ID, чтобы сохранить результат в общем рейтинге.</p>
-          <button id="save-yandex-score-button" class="text-button" type="button">Войти и сохранить в рейтинге Яндекса</button>
+          <p id="yandex-score-copy">Авторизуйтесь, чтобы сохранить результат в общем рейтинге.</p>
+          <button id="save-yandex-score-button" class="text-button" type="button">Войти и сохранить результат</button>
           <p id="yandex-score-message" class="leaderboard-save-message" aria-live="polite"></p>
         </div>
         <button id="play-again-button" class="submit-button modal-button" type="button">Сыграть ещё раз</button>
@@ -209,6 +216,7 @@
         <button id="start-game-button" class="submit-button start-button" type="button">Начать игру</button>
       </div>
     </section>
+    </div>
 
     <script src="word-bank.js"></script>
     <script src="game.js?v=20260801"></script>

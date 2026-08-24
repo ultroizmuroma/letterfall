@@ -1,5 +1,5 @@
 (() => {
-  const LEADERBOARD_NAME = 'letterfall_score';
+  const LEADERBOARD_NAME = 'letterfall';
   const SUPPORTED_LANGUAGES = new Set(['ru']);
   const query = new URLSearchParams(window.location.search);
   const isLocal = window.location.protocol === 'file:'
@@ -8,18 +8,38 @@
     || window.location.hostname.endsWith('.yandex.net');
   const shouldLoadSdk = query.has('yandex-sdk') || isYandexHost;
   let sdk = null;
-  let readyRequested = false;
+  let gameReadySent = false;
   let gameplayActive = false;
   let language = 'ru';
   let fullscreenAdRequest = null;
+  let resolveInitialization;
+  const initialization = new Promise((resolve) => {
+    resolveInitialization = resolve;
+  });
 
   function emit(type, detail = {}) {
     window.dispatchEvent(new CustomEvent(type, { detail }));
   }
 
   function gameReady() {
-    readyRequested = true;
-    sdk?.features?.LoadingAPI?.ready();
+    const ready = sdk?.features?.LoadingAPI?.ready;
+    if (typeof ready !== 'function' || gameReadySent) return false;
+    ready.call(sdk.features.LoadingAPI);
+    gameReadySent = true;
+    return true;
+  }
+
+  function applyLanguage(detectedLanguage) {
+    // Игра заявлена только на русском. Код языка всё равно обязателен: SDK
+    // определяет его на старте, а для неподдерживаемых языков выбирается ru.
+    language = SUPPORTED_LANGUAGES.has(detectedLanguage) ? detectedLanguage : 'ru';
+    document.documentElement.lang = language;
+    document.documentElement.dataset.gameLanguage = language;
+    document.documentElement.dataset.yandexLanguage = detectedLanguage || 'ru';
+  }
+
+  function finishInitialization(detail) {
+    resolveInitialization(detail);
   }
 
   function gameplayStart() {
@@ -35,22 +55,22 @@
   }
 
   async function initialize() {
-    if (!window.YaGames || sdk) return;
+    if (sdk) return;
+    if (!window.YaGames) {
+      finishInitialization({ status: 'failed', isPlatform: true });
+      return;
+    }
     try {
       sdk = await window.YaGames.init();
       const detectedLanguage = sdk.environment?.i18n?.lang;
-      // Игра пока поддерживает русский, но язык всегда определяется через SDK.
-      // Для неподдерживаемого языка используется явный русский fallback.
-      language = SUPPORTED_LANGUAGES.has(detectedLanguage) ? detectedLanguage : 'ru';
-      document.documentElement.lang = language;
-      document.documentElement.dataset.gameLanguage = language;
-      document.documentElement.dataset.yandexLanguage = detectedLanguage || 'ru';
-      if (readyRequested) gameReady();
+      applyLanguage(detectedLanguage);
       sdk.on?.('game_api_pause', () => emit('letterfall:yandex-pause'));
       sdk.on?.('game_api_resume', () => emit('letterfall:yandex-resume'));
       emit('letterfall:yandex-ready', { sdk, language, detectedLanguage });
+      finishInitialization({ status: 'ready', isPlatform: true, language, detectedLanguage });
     } catch (error) {
-      console.warn('[Словобой: скоростная печать] SDK Яндекс Игр не инициализирован.', error);
+      console.warn('[Словобой: скоростная печать] Платформенный SDK не инициализирован.', error);
+      finishInitialization({ status: 'failed', isPlatform: true });
     }
   }
 
@@ -71,7 +91,7 @@
       await sdk.leaderboards.setScore(LEADERBOARD_NAME, score, String(level));
       return { saved: true };
     } catch (error) {
-      return { saved: false, reason: 'Не удалось сохранить результат в рейтинге Яндекса.', error };
+      return { saved: false, reason: 'Не удалось сохранить результат в общем рейтинге.', error };
     }
   }
 
@@ -133,18 +153,26 @@
   }
 
   function loadSdk() {
-    if (!shouldLoadSdk || isLocal) return;
+    if (!shouldLoadSdk || isLocal) {
+      applyLanguage('ru');
+      finishInitialization({ status: 'ready', isPlatform: false, language, detectedLanguage: 'ru' });
+      return;
+    }
     const script = document.createElement('script');
     script.src = '/sdk.js';
     script.async = true;
     script.onload = initialize;
-    script.onerror = () => console.warn('[Словобой: скоростная печать] Не удалось загрузить SDK Яндекс Игр.');
+    script.onerror = () => {
+      console.warn('[Словобой: скоростная печать] Не удалось загрузить платформенный SDK.');
+      finishInitialization({ status: 'failed', isPlatform: true });
+    };
     document.head.append(script);
   }
 
   window.LetterfallYandex = {
     leaderboardName: LEADERBOARD_NAME,
     isPlatform: () => Boolean(sdk),
+    whenInitialized: () => initialization,
     gameReady,
     gameplayStart,
     gameplayStop,
