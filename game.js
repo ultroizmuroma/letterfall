@@ -2,7 +2,7 @@ const ROWS = 8;
 const COLS = 7;
 const ROUND_SECONDS = 90;
 const STAR_TARGET = 12;
-const MAX_HEALTH_POINTS = 6;
+const MAX_LIVES = 3;
 const BASE_FALL_STEP_MS = 820;
 const MIN_FALL_STEP_MS = 420;
 const FALL_SPEEDUP_PER_LEVEL_MS = 55;
@@ -56,7 +56,6 @@ const rulesText = document.querySelector('#rules-text');
 const restartButton = document.querySelector('#restart-button');
 const pauseButton = document.querySelector('#pause-button');
 const soundButton = document.querySelector('#sound-button');
-const levelUpNotice = document.querySelector('#level-up-notice');
 const leaderboardCard = document.querySelector('#leaderboard-card');
 const leaderboardBody = document.querySelector('#leaderboard-body');
 const modal = document.querySelector('#result-modal');
@@ -83,7 +82,9 @@ let stars = 0;
 let timeLeft = ROUND_SECONDS;
 let timerId = null;
 let fallingTimerId = null;
-let levelUpTimerId = null;
+let fallingFrameTimestamp = null;
+let fallingStepElapsedMs = 0;
+let fallingRowDistance = 0;
 let locked = false;
 let finished = false;
 let bannedLetter = null;
@@ -103,7 +104,7 @@ let activeWordPreset = wordPresetSelect.value;
 let activeWordBank = WORD_PRESET_COLLECTION[activeWordPreset].words;
 let selectedStartPreset = activeWordPreset;
 let fallingWord = null;
-let healthPoints = MAX_HEALTH_POINTS;
+let lives = MAX_LIVES;
 let fallingScore = 0;
 let fallingWordsCaught = 0;
 let fallingLevel = 1;
@@ -187,7 +188,7 @@ function renderPresetChoices() {
 
 function openStartScreen() {
   clearInterval(timerId);
-  clearInterval(fallingTimerId);
+  stopFallingTimer();
   finished = true;
   locked = true;
   input.disabled = true;
@@ -308,12 +309,13 @@ function renderFallingBoard() {
       cell.setAttribute('role', 'gridcell');
       if (isWordCell) {
         const letter = fallingWord.word[wordIndex];
+        cell.dataset.wordIndex = wordIndex;
         cell.textContent = letter;
         cell.setAttribute('aria-label', `${letter}${fallingWord.bonusIndex === wordIndex ? ', с сердечком' : ''}`);
         if (fallingWord.bonusIndex === wordIndex) {
           const heart = document.createElement('span');
-          heart.className = `word-heart${fallingWord.bonusType === 'half' ? ' is-half' : ''}`;
-          heart.textContent = fallingWord.bonusType === 'half' ? '◐' : '♥';
+          heart.className = 'word-heart';
+          heart.textContent = '♥';
           cell.append(heart);
         }
       } else {
@@ -322,7 +324,58 @@ function renderFallingBoard() {
       boardElement.append(cell);
     }
   }
+  fallingRowDistance = boardElement.children[COLS]
+    ? boardElement.children[COLS].offsetTop - boardElement.children[0].offsetTop
+    : 0;
+  updateFallingWordTypingFeedback();
+  updateFallingWordPosition();
   renderDeveloperWords();
+}
+
+function typedLetters() {
+  return [...input.value.toLocaleUpperCase('ru-RU')];
+}
+
+function updateFallingWordTypingFeedback() {
+  if (gameMode !== GAME_MODES.FALLING || !fallingWord) return;
+  const typed = typedLetters();
+  const hasExtraLetter = typed.length > fallingWord.word.length;
+  boardElement.querySelectorAll('.cell.is-active-word').forEach((cell) => {
+    const wordIndex = Number(cell.dataset.wordIndex);
+    const typedLetter = typed[wordIndex];
+    const isLastLetterWithExtraInput = hasExtraLetter && wordIndex === fallingWord.word.length - 1;
+    const isCorrect = Boolean(typedLetter)
+      && typedLetter === fallingWord.word[wordIndex]
+      && !isLastLetterWithExtraInput;
+    const isWrong = Boolean(typedLetter) && !isCorrect;
+    cell.classList.toggle('is-typed-correct', isCorrect);
+    cell.classList.toggle('is-typed-wrong', isWrong);
+  });
+}
+
+function handleWordInput(event) {
+  updateFallingWordTypingFeedback();
+  if (event.isComposing || finished || locked || paused || gameMode !== GAME_MODES.FALLING || !fallingWord) return;
+  const typed = typedLetters();
+  const isCompleteMatch = typed.length === fallingWord.word.length
+    && typed.every((letter, index) => letter === fallingWord.word[index]);
+  if (!isCompleteMatch) return;
+  const rawWord = input.value;
+  const word = normalizeWord(rawWord);
+  logDebug('input', { raw: rawWord, word, automatic: true });
+  submitFallingWord(rawWord, word);
+}
+
+function updateFallingWordPosition() {
+  if (gameMode !== GAME_MODES.FALLING || !fallingWord) return;
+  const canMoveToNextRow = fallingWord.row < ROWS - 1;
+  const progress = canMoveToNextRow
+    ? Math.min(1, fallingStepElapsedMs / currentFallStepMs())
+    : 0;
+  const offset = progress * fallingRowDistance;
+  boardElement.querySelectorAll('.cell.is-active-word').forEach((cell) => {
+    cell.style.transform = `translate3d(0, ${offset}px, 0)`;
+  });
 }
 
 function createShuffledFallingDeck(avoidFirstWord = lastFallingWord) {
@@ -370,10 +423,8 @@ function takeWordFromFallingDeck() {
 
 function createFallingWord() {
   const word = takeWordFromFallingDeck();
-  const canRecover = fallingWordsSinceRecovery >= recoveryFrequency - 1;
-  const bonusType = canRecover && Math.random() < .45
-    ? Math.random() < .5 ? 'full' : 'half'
-    : null;
+  const canRecover = word.length >= 6 && fallingWordsSinceRecovery >= recoveryFrequency - 1;
+  const bonusType = canRecover && Math.random() < .45 ? 'full' : null;
   if (bonusType) fallingWordsSinceRecovery = 0;
   else fallingWordsSinceRecovery += 1;
   lastFallingWord = word;
@@ -388,6 +439,8 @@ function createFallingWord() {
 
 function spawnFallingWord() {
   if (finished || gameMode !== GAME_MODES.FALLING) return;
+  fallingStepElapsedMs = 0;
+  input.value = '';
   fallingWord = createFallingWord();
   logDebug('falling_spawn', {
     word: fallingWord.word,
@@ -558,15 +611,15 @@ function debugEntryText(entry) {
     case 'session_saved':
       return `Сессия сохранена: ${entry.events} событий.`;
     case 'falling_spawn':
-      return `Появилось «${entry.word}» в колонке ${entry.column + 1}${entry.bonus ? `, бонус: ${entry.bonus === 'full' ? '♥' : '◐'}` : ''}; колода ${entry.deck}, осталось ${entry.deckRemaining}, ур. ${entry.level}, шаг ${entry.stepMs} мс.`;
+      return `Появилось «${entry.word}» в колонке ${entry.column + 1}${entry.bonus ? ', бонус: ♥' : ''}; колода ${entry.deck}, осталось ${entry.deckRemaining}, ур. ${entry.level}, шаг ${entry.stepMs} мс.`;
     case 'deck_shuffle':
       return `Перемешана следующая колода ${entry.deck}: ${entry.size} слов. В текущей осталось ${entry.remaining}.`;
     case 'deck_start':
       return `Началась колода ${entry.deck}: ${entry.size} слов.`;
     case 'falling_match':
-      return `Поймано «${entry.word}»: +${entry.points} очков${entry.bonus ? `, восстановлено ${entry.bonus === 'full' ? '1' : '½'} ♥` : ''}. Всего ${entry.score}.`;
+      return `Поймано «${entry.word}»: +${entry.points} очков${entry.bonus ? ', восстановлена 1 жизнь ♥' : ''}. Всего ${entry.score}.`;
     case 'life_lost':
-      return `«${entry.word}» достигло низа: −1 ♥, осталось ${entry.health / 2}.`;
+      return `«${entry.word}» достигло низа: −1 ♥, осталось ${entry.lives}.`;
     case 'level_up':
       return `Новый уровень ${entry.level}: скорость падения ${entry.stepMs} мс.`;
     case 'leaderboard_saved':
@@ -671,7 +724,7 @@ function saveCompletedSession(won) {
     fallingScore,
     fallingWordsCaught,
     fallingLevel,
-    healthPoints,
+    lives,
     target: STAR_TARGET,
     timeLeft,
     minimumWordCount,
@@ -747,7 +800,7 @@ function updateCurrentSessionLeaderboard(entry) {
 }
 
 function saveLeaderboardScore() {
-  if (leaderboardSaved || gameMode !== GAME_MODES.FALLING || !finished || healthPoints > 0) return;
+  if (leaderboardSaved || gameMode !== GAME_MODES.FALLING || !finished || lives > 0) return;
   const nickname = nicknameInput.value.trim().replace(/\s+/g, ' ').slice(0, 16);
   if (!nickname) {
     leaderboardSaveMessage.textContent = 'Введите никнейм, чтобы попасть в таблицу.';
@@ -781,7 +834,7 @@ function saveLeaderboardScore() {
 }
 
 async function saveYandexLeaderboardScore() {
-  if (platformLeaderboardSaved || gameMode !== GAME_MODES.FALLING || !finished || healthPoints > 0) return;
+  if (platformLeaderboardSaved || gameMode !== GAME_MODES.FALLING || !finished || lives > 0) return;
   saveYandexScoreButton.disabled = true;
   yandexScoreMessage.textContent = 'Сохраняем результат…';
   const result = await window.LetterfallYandex?.authorizeAndSaveScore?.(fallingScore, fallingLevel);
@@ -828,10 +881,8 @@ function updateHud() {
   timerElement.textContent = `${minutes}:${seconds}`;
   timerBox.classList.toggle('is-low', timeLeft <= 15);
   if (gameMode === GAME_MODES.FALLING) {
-    const fullHearts = Math.floor(healthPoints / 2);
-    const halfHeart = healthPoints % 2;
-    healthValue.textContent = `${'♥'.repeat(fullHearts)}${halfHeart ? '◐' : ''}${'♡'.repeat(3 - fullHearts - halfHeart)}`;
-    healthIndicator.setAttribute('aria-label', `Осталось жизней: ${healthPoints / 2}`);
+    healthValue.textContent = `${'♥'.repeat(lives)}${'♡'.repeat(MAX_LIVES - lives)}`;
+    healthIndicator.setAttribute('aria-label', `Осталось жизней: ${lives}`);
     scoreValue.textContent = fallingScore;
     levelValue.textContent = fallingLevel;
     return;
@@ -849,18 +900,9 @@ function levelForScore(score) {
   return Math.floor(score / LEVEL_SCORE_STEP) + 1;
 }
 
-function showLevelUp(level) {
-  clearTimeout(levelUpTimerId);
-  levelUpNotice.classList.add('is-hidden');
-  void levelUpNotice.offsetWidth;
-  levelUpNotice.textContent = `Новый уровень! ${level}`;
-  levelUpNotice.classList.remove('is-hidden');
-  levelUpTimerId = setTimeout(() => levelUpNotice.classList.add('is-hidden'), 1800);
-  playSound('level');
-}
-
 function updateModeUi() {
   const isFallingMode = gameMode === GAME_MODES.FALLING;
+  document.body.classList.toggle('is-falling-mode', isFallingMode);
   scoreIndicator.classList.toggle('is-hidden', !isFallingMode);
   levelIndicator.classList.toggle('is-hidden', !isFallingMode);
   healthIndicator.classList.toggle('is-hidden', !isFallingMode);
@@ -1001,18 +1043,20 @@ function collapseBoard(indices, word) {
 
 function advanceFallingWord() {
   if (finished || locked || paused || gameMode !== GAME_MODES.FALLING || !fallingWord) return;
-  if (fallingWord.row < ROWS - 1) {
+  if (fallingWord.row < ROWS - 2) {
     fallingWord.row += 1;
     renderFallingBoard();
     return;
   }
   const missedWord = fallingWord.word;
   fallingWord = null;
-  healthPoints = Math.max(0, healthPoints - 2);
+  input.value = '';
+  renderFallingBoard();
+  lives = Math.max(0, lives - 1);
   playSound('lost');
   updateHud();
-  logDebug('life_lost', { word: missedWord, health: healthPoints });
-  if (healthPoints === 0) {
+  logDebug('life_lost', { word: missedWord, lives });
+  if (lives === 0) {
     finish(false);
     return;
   }
@@ -1034,8 +1078,7 @@ function submitFallingWord(rawWord, word) {
   fallingScore += points;
   fallingWordsCaught += 1;
   fallingLevel = levelForScore(fallingScore);
-  if (caughtWord.bonusType === 'full') healthPoints = Math.min(MAX_HEALTH_POINTS, healthPoints + 2);
-  if (caughtWord.bonusType === 'half') healthPoints = Math.min(MAX_HEALTH_POINTS, healthPoints + 1);
+  if (caughtWord.bonusType) lives = Math.min(MAX_LIVES, lives + 1);
   playSound(caughtWord.bonusType ? 'heal' : 'correct');
   input.value = '';
   updateHud();
@@ -1043,22 +1086,19 @@ function submitFallingWord(rawWord, word) {
     word,
     raw: rawWord,
     bonus: caughtWord.bonusType,
-    health: healthPoints,
+    lives,
     points,
     score: fallingScore,
     level: fallingLevel,
   });
   if (fallingLevel > previousLevel) {
     startFallingTimer();
-    showLevelUp(fallingLevel);
     logDebug('level_up', { level: fallingLevel, stepMs: currentFallStepMs() });
   }
   setMessage(
-    caughtWord.bonusType === 'full'
+    caughtWord.bonusType
       ? `«${word}» поймано! +${points} очков и 1 жизнь ♥`
-      : caughtWord.bonusType === 'half'
-        ? `«${word}» поймано! +${points} очков и ½ жизни ◐`
-        : `«${word}» поймано! +${points} очков`,
+      : `«${word}» поймано! +${points} очков`,
     'success',
   );
   spawnFallingWord();
@@ -1114,17 +1154,17 @@ function finish(won) {
   finished = true;
   locked = true;
   clearInterval(timerId);
-  clearInterval(fallingTimerId);
+  stopFallingTimer();
   input.disabled = true;
   window.LetterfallYandex?.gameplayStop();
   updatePauseButton();
   playSound(won ? 'level' : 'finish');
-  logDebug('finish', { won, stars, score: fallingScore, health: healthPoints, level: fallingLevel, mode: gameMode });
+  logDebug('finish', { won, stars, score: fallingScore, lives, level: fallingLevel, mode: gameMode });
   saveCompletedSession(won);
   resultIcon.textContent = won ? '★' : gameMode === GAME_MODES.FALLING ? '♥' : '⌛';
   resultTitle.textContent = won
     ? gameMode === GAME_MODES.FALLING ? 'Слова не прорвались!' : 'Звёзды собраны!'
-    : gameMode === GAME_MODES.FALLING && healthPoints === 0 ? 'Жизни закончились' : 'Время вышло';
+    : gameMode === GAME_MODES.FALLING && lives === 0 ? 'Жизни закончились' : 'Время вышло';
   resultCopy.textContent = gameMode === GAME_MODES.FALLING
     ? won
       ? `Вы поймали ${fallingWordsCaught} слов и набрали ${fallingScore} очков.`
@@ -1132,7 +1172,7 @@ function finish(won) {
     : won
       ? `Вы собрали ${stars} из ${STAR_TARGET} звёзд и успели до конца раунда.`
       : `Собрано ${stars} из ${STAR_TARGET} звёзд. Попробуйте находить слова подлиннее — так проще поймать звёзды.`;
-  const shouldOfferLeaderboard = gameMode === GAME_MODES.FALLING && healthPoints === 0;
+  const shouldOfferLeaderboard = gameMode === GAME_MODES.FALLING && lives === 0;
   const shouldOfferYandexLeaderboard = shouldOfferLeaderboard && Boolean(window.LetterfallYandex?.isPlatform?.());
   const shouldOfferLocalLeaderboard = shouldOfferLeaderboard && !shouldOfferYandexLeaderboard;
   leaderboardPrompt.classList.toggle('is-hidden', !shouldOfferLocalLeaderboard);
@@ -1164,14 +1204,40 @@ function startTimer() {
 }
 
 function startFallingTimer() {
-  clearInterval(fallingTimerId);
-  fallingTimerId = setInterval(advanceFallingWord, currentFallStepMs());
+  stopFallingTimer();
+  fallingFrameTimestamp = null;
+  fallingTimerId = requestAnimationFrame(animateFallingWord);
+}
+
+function stopFallingTimer() {
+  if (fallingTimerId !== null) cancelAnimationFrame(fallingTimerId);
+  fallingTimerId = null;
+  fallingFrameTimestamp = null;
+}
+
+function animateFallingWord(timestamp) {
+  const previousTimestamp = fallingFrameTimestamp ?? timestamp;
+  const frameDuration = Math.min(100, Math.max(0, timestamp - previousTimestamp));
+  fallingFrameTimestamp = timestamp;
+
+  if (!finished && !locked && !paused && gameMode === GAME_MODES.FALLING && fallingWord) {
+    fallingStepElapsedMs += frameDuration;
+    const stepDuration = currentFallStepMs();
+    if (fallingStepElapsedMs >= stepDuration) {
+      fallingStepElapsedMs -= stepDuration;
+      advanceFallingWord();
+    }
+    updateFallingWordPosition();
+  }
+
+  if (fallingTimerId !== null) {
+    fallingTimerId = requestAnimationFrame(animateFallingWord);
+  }
 }
 
 function startGame({ playStartSound = false } = {}) {
   clearInterval(timerId);
-  clearInterval(fallingTimerId);
-  clearTimeout(levelUpTimerId);
+  stopFallingTimer();
   stars = 0;
   timeLeft = ROUND_SECONDS;
   locked = false;
@@ -1180,7 +1246,9 @@ function startGame({ playStartSound = false } = {}) {
   lastHint = null;
   nextCellId = 0;
   fallingWord = null;
-  healthPoints = MAX_HEALTH_POINTS;
+  fallingStepElapsedMs = 0;
+  fallingRowDistance = 0;
+  lives = MAX_LIVES;
   fallingScore = 0;
   fallingWordsCaught = 0;
   fallingLevel = 1;
@@ -1212,7 +1280,6 @@ function startGame({ playStartSound = false } = {}) {
   modal.classList.add('is-hidden');
   leaderboardPrompt.classList.add('is-hidden');
   yandexScorePrompt.classList.add('is-hidden');
-  levelUpNotice.classList.add('is-hidden');
   updateModeUi();
   if (gameMode === GAME_MODES.FALLING) {
     board = [];
@@ -1222,7 +1289,7 @@ function startGame({ playStartSound = false } = {}) {
     spawnFallingWord();
     logDebug('round', {
       mode: GAME_MODES.FALLING,
-      health: healthPoints / 2,
+      lives,
       recoveryFrequency,
       preset: activeWordPreset,
       presetTitle: activePresetTitle(),
@@ -1251,6 +1318,10 @@ function startGame({ playStartSound = false } = {}) {
 }
 
 form.addEventListener('submit', submitWord);
+input.addEventListener('input', handleWordInput);
+boardElement.addEventListener('click', () => {
+  if (gameMode === GAME_MODES.FALLING && !finished && !locked && !paused) input.focus();
+});
 hintButton.addEventListener('click', showHint);
 modifierButton.addEventListener('click', toggleModifier);
 pauseButton.addEventListener('click', () => setPaused(!paused));
