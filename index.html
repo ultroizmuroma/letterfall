@@ -8,8 +8,8 @@
     <meta property="og:title" content="Словопад" />
     <meta property="og:description" content="Ловите падающие слова, набирайте очки и ставьте рекорды." />
     <title>Словопад — словесная головоломка</title>
-    <link rel="stylesheet" href="vendor/game-style-engine.css" />
-    <link rel="stylesheet" href="styles.css?v=20260903b" />
+    <link rel="stylesheet" href="vendor/game-style-engine.css?v=a63686d4c2bb" />
+    <link rel="stylesheet" href="styles.css?v=20260904a" />
     <script src="sounds.js"></script>
   </head>
   <body class="is-booting" data-gse-root>
@@ -28,51 +28,51 @@
       <span aria-hidden="true">↻</span>
       <p>Поверните устройство вертикально, чтобы продолжить.</p>
     </div>
-    <div class="app-shell">
-      <header class="topbar">
-        <a class="brand" href="#" aria-label="Словопад — продолжить игру">
+    <div class="app-shell gse-app-shell">
+      <header class="topbar gse-game-header">
+        <a class="brand gse-game-brand" href="#" aria-label="Словопад — продолжить игру">
           <span class="brand-mark" aria-hidden="true">С</span>
-          <span class="brand-copy">
+          <span class="brand-copy gse-brand-copy">
             <strong>Словопад</strong>
             <small>слова — вниз</small>
           </span>
         </a>
-        <nav class="topbar-actions" aria-label="Настройки игры">
-          <a class="catalog-link" href="/" aria-label="Вернуться в каталог игр">← Все игры</a>
-          <button id="sound-button" class="icon-button sound-button" type="button" aria-label="Выключить звук" title="Выключить звук">
-            <svg class="icon icon-sound-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Zm12.5-1.5a6 6 0 0 1 0 9M18.8 5.2a9.5 9.5 0 0 1 0 13.6" /></svg>
-            <svg class="icon icon-sound-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Zm12 1 5 5m0-5-5 5" /></svg>
+        <nav class="topbar-actions gse-header-actions" aria-label="Настройки игры">
+          <a class="catalog-link gse-catalog-link" href="/" aria-label="Вернуться в каталог игр">← Все игры</a>
+          <button id="sound-button" class="icon-button sound-button gse-icon-button gse-sound-toggle" type="button" aria-label="Выключить звук" title="Выключить звук" data-muted="false">
+            <svg class="icon icon-sound-on gse-icon gse-sound-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Zm12.5-1.5a6 6 0 0 1 0 9M18.8 5.2a9.5 9.5 0 0 1 0 13.6" /></svg>
+            <svg class="icon icon-sound-off gse-icon gse-sound-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Zm12 1 5 5m0-5-5 5" /></svg>
           </button>
-          <button id="stats-button" class="icon-button" type="button" aria-label="Статистика" title="Статистика">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V9m7 10V5m7 14v-7" /></svg>
+          <button id="stats-button" class="icon-button gse-icon-button" type="button" aria-label="Статистика" title="Статистика">
+            <svg class="icon gse-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V9m7 10V5m7 14v-7" /></svg>
           </button>
-          <button id="menu-button" class="menu-button" type="button" aria-label="Меню">
+          <button id="menu-button" class="menu-button gse-menu-button" type="button" aria-label="Меню">
             <span>Меню</span>
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14" /></svg>
+            <svg class="icon gse-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14" /></svg>
           </button>
         </nav>
       </header>
 
-      <main class="game-layout">
-        <aside class="side-panel" aria-label="Режим и описание игры">
-          <div class="mode-switch" role="tablist" aria-label="Режим игры">
-            <button class="mode-button is-active" type="button" role="tab" aria-selected="true" data-mode="falling">Словопад</button>
-            <button class="mode-button" type="button" role="tab" aria-selected="false" data-mode="stars">Звездопад</button>
+      <main class="game-layout gse-game-layout">
+        <aside class="side-panel gse-game-sidebar" aria-label="Режим и описание игры">
+          <div class="mode-switch gse-mode-switch" role="tablist" aria-label="Режим игры">
+            <button class="mode-button gse-mode-button is-active" type="button" role="tab" aria-selected="true" data-mode="falling">Словопад</button>
+            <button class="mode-button gse-mode-button" type="button" role="tab" aria-selected="false" data-mode="stars">Звездопад</button>
           </div>
 
-          <section class="variation-panel" aria-labelledby="variation-label">
-            <p id="variation-label" class="eyebrow">Тематика слов</p>
-            <div id="preset-choices" class="preset-choices" role="radiogroup" aria-label="Тематическая колода"></div>
+          <section class="variation-panel gse-variation-section" aria-labelledby="variation-label">
+            <p id="variation-label" class="eyebrow gse-eyebrow">Тематика слов</p>
+            <div id="preset-choices" class="preset-choices gse-variation-grid" role="radiogroup" aria-label="Тематическая колода"></div>
           </section>
 
-          <section class="level-intro">
-            <p id="goal-eyebrow" class="eyebrow">Общие слова</p>
+          <section class="level-intro gse-mode-intro">
+            <p id="goal-eyebrow" class="eyebrow gse-eyebrow">Общие слова</p>
             <h1 id="goal-title">Ловите слова</h1>
-            <p id="rules-text" class="intro-copy">Напечатайте падающее слово до нижней границы. За каждую букву начисляются очки, а с уровнем скорость растёт.</p>
+            <p id="rules-text" class="intro-copy gse-mode-copy">Напечатайте падающее слово до нижней границы. За каждую букву начисляются очки, а с уровнем скорость растёт.</p>
           </section>
 
-          <section id="personal-best-card" class="personal-best-card">
-            <div class="progress-heading">
+          <section id="personal-best-card" class="personal-best-card gse-supporting-info">
+            <div class="progress-heading gse-supporting-heading">
               <span>Личный рекорд на устройстве</span>
               <strong><span id="personal-best-score">0</span> очков</strong>
             </div>
@@ -101,15 +101,15 @@
             </div>
           </section>
 
-          <section class="tip-card">
-            <span class="tip-icon" aria-hidden="true">✦</span>
+          <section class="tip-card gse-tip">
+            <span class="tip-icon gse-tip-icon" aria-hidden="true">✦</span>
             <div>
               <strong>Быстрый совет</strong>
               <p id="quick-tip-text">Смотрите на слово целиком и печатайте ритмично — исправить ошибку можно Backspace.</p>
             </div>
           </section>
 
-          <div class="control-hint" aria-label="Управление">
+          <div class="control-hint gse-controls-hint" aria-label="Управление">
             <kbd>А–Я</kbd>
             <span id="control-hint-text">печатать · Backspace исправить</span>
           </div>
@@ -161,9 +161,9 @@
           </section>
         </aside>
 
-        <section class="board-panel gse-surface" aria-label="Игровое поле">
-          <div class="board-toolbar">
-            <div class="difficulty-pill"><i aria-hidden="true"></i><span id="difficulty-label">Словопад · Общие слова</span></div>
+        <section class="board-panel gse-surface gse-play-surface" aria-label="Игровое поле">
+          <div class="board-toolbar gse-surface-toolbar">
+            <div class="difficulty-pill gse-status-pill"><i aria-hidden="true"></i><span id="difficulty-label">Словопад · Общие слова</span></div>
             <div class="round-meta">
               <div id="score-indicator" class="game-stat is-hidden" aria-label="Набранные очки"><span class="timer-label">Очки</span><strong id="score-value">0</strong></div>
               <div id="level-indicator" class="game-stat is-hidden" aria-label="Текущий уровень"><span class="timer-label">Уровень</span><strong id="level-value">1</strong></div>
@@ -177,7 +177,7 @@
             <span id="stars-value">0 / 12</span>
           </div>
 
-          <div class="board-stage">
+          <div class="board-stage gse-play-stage">
             <div id="board" class="board" role="grid" aria-label="Игровое поле с буквами"></div>
             <form id="word-form" class="word-form" autocomplete="off">
               <label class="word-label" for="word-input">Найдите слово на поле</label>
@@ -187,49 +187,49 @@
               </div>
             </form>
             <p id="message" class="message" aria-live="polite">Слова читаются слева направо или сверху вниз.</p>
-            <div id="pause-layer" class="pause-layer" aria-hidden="true">
-              <span class="pause-symbol" aria-hidden="true">Ⅱ</span>
+            <div id="pause-layer" class="pause-layer gse-pause-layer" aria-hidden="true">
+              <span class="pause-symbol gse-pause-symbol" aria-hidden="true">Ⅱ</span>
               <strong>Игра на паузе</strong>
-              <button id="resume-button" class="primary-button compact" type="button">Продолжить игру</button>
+              <button id="resume-button" class="primary-button compact gse-button" type="button">Продолжить игру</button>
             </div>
           </div>
 
-          <div class="puzzle-actions">
-            <button id="pause-button" class="action-button" type="button" aria-label="Поставить игру на паузу"><span aria-hidden="true">Ⅱ</span><b data-action-label>Пауза</b></button>
-            <button id="restart-button" class="action-button" type="button" aria-label="Начать заново"><span aria-hidden="true">↻</span><b>Заново</b></button>
+          <div class="puzzle-actions gse-local-actions">
+            <button id="pause-button" class="action-button gse-local-action" type="button" aria-label="Поставить игру на паузу"><span aria-hidden="true">Ⅱ</span><b data-action-label>Пауза</b></button>
+            <button id="restart-button" class="action-button gse-local-action" type="button" aria-label="Начать заново"><span aria-hidden="true">↻</span><b>Заново</b></button>
           </div>
         </section>
       </main>
     </div>
 
-    <dialog id="stats-dialog" class="game-dialog" aria-labelledby="stats-dialog-title">
-      <button class="dialog-close" type="button" data-close-dialog aria-label="Закрыть">×</button>
+    <dialog id="stats-dialog" class="game-dialog gse-dialog gse-game-dialog" aria-labelledby="stats-dialog-title">
+      <button class="dialog-close gse-dialog-close" type="button" data-close-dialog aria-label="Закрыть">×</button>
       <p class="eyebrow">На этом устройстве</p>
       <h2 id="stats-dialog-title">Статистика</h2>
-      <div class="stats-grid">
+      <div class="stats-grid gse-stats-grid">
         <span><strong id="stats-primary-value">0</strong><small id="stats-primary-label">Очки</small></span>
         <span><strong id="stats-secondary-value">1</strong><small id="stats-secondary-label">Уровень</small></span>
         <span><strong id="stats-third-value">0</strong><small id="stats-third-label">Поймано слов</small></span>
         <span><strong id="stats-best-value">0</strong><small>Личный рекорд</small></span>
       </div>
       <p id="stats-note" class="cloud-note">Рекорд хранится только в этом браузере.</p>
-      <button class="primary-button" type="button" data-close-dialog>Закрыть</button>
+      <button class="primary-button gse-button" type="button" data-close-dialog>Закрыть</button>
     </dialog>
 
-    <dialog id="menu-dialog" class="game-dialog" aria-labelledby="menu-dialog-title">
-      <button class="dialog-close" type="button" data-close-dialog aria-label="Закрыть">×</button>
+    <dialog id="menu-dialog" class="game-dialog gse-dialog gse-game-dialog" aria-labelledby="menu-dialog-title">
+      <button class="dialog-close gse-dialog-close" type="button" data-close-dialog aria-label="Закрыть">×</button>
       <p class="eyebrow">Настройки игры</p>
       <h2 id="menu-dialog-title">Меню</h2>
-      <div class="settings-list">
+      <div class="settings-list gse-settings-list">
         <button id="menu-resume-button" type="button"><span><i>▶</i><b>Продолжить</b></span><em>Вернуться в игру</em></button>
         <button id="menu-sound-button" type="button"><span><i>♪</i><b>Звук</b></span><em id="menu-sound-state">Включён</em></button>
         <button id="menu-restart-button" type="button"><span><i>↻</i><b>Начать заново</b></span><em>Текущий режим</em></button>
       </div>
-      <details class="menu-rules">
+      <details class="menu-rules gse-details">
         <summary>Как играть</summary>
         <p id="menu-rules-text">Напечатайте падающее слово до нижней границы.</p>
       </details>
-      <a class="dialog-catalog-link" href="/">← Все игры</a>
+      <a class="dialog-catalog-link gse-dialog-catalog-link" href="/">← Все игры</a>
     </dialog>
 
     <div id="result-modal" class="modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="result-title">
@@ -247,7 +247,7 @@
           <button id="play-again-button" class="submit-button gse-button modal-button" type="button">Сыграть ещё раз</button>
         </div>
         <p id="share-result-message" class="share-result-message" aria-live="polite"></p>
-        <a class="dialog-catalog-link" href="/">← Все игры</a>
+        <a class="dialog-catalog-link gse-dialog-catalog-link" href="/">← Все игры</a>
       </div>
     </div>
 
@@ -263,13 +263,13 @@
         <p class="start-copy">В «Словопаде» набрано</p>
         <div class="shared-score"><strong id="shared-score-value">0</strong><span>очков</span></div>
         <button id="share-rematch-button" class="submit-button gse-button start-button" type="button">Я сделаю лучше</button>
-        <a class="dialog-catalog-link" href="/">← Все игры</a>
+        <a class="dialog-catalog-link gse-dialog-catalog-link" href="/">← Все игры</a>
       </div>
     </section>
 
     </div>
 
     <script src="word-bank.js"></script>
-    <script src="game.js?v=20260903b"></script>
+    <script src="game.js?v=20260904a"></script>
   </body>
 </html>

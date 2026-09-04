@@ -153,6 +153,7 @@ function playSound(name) {
 function updateSoundButton() {
   const enabled = window.LetterfallSounds?.isEnabled?.() ?? false;
   soundButton.classList.toggle('is-muted', !enabled);
+  soundButton.dataset.muted = String(!enabled);
   soundButton.setAttribute('aria-label', enabled ? 'Выключить звук' : 'Включить звук');
   soundButton.title = enabled ? 'Выключить звук' : 'Включить звук';
   menuSoundState.textContent = enabled ? 'Включён' : 'Выключен';
@@ -211,7 +212,7 @@ function renderPresetChoices() {
   Object.entries(WORD_PRESET_COLLECTION).forEach(([presetId, preset]) => {
     const option = document.createElement('button');
     option.type = 'button';
-    option.className = `preset-choice${presetId === selectedStartPreset ? ' is-selected' : ''}`;
+    option.className = `preset-choice gse-variation-button${presetId === selectedStartPreset ? ' is-selected' : ''}`;
     option.setAttribute('role', 'radio');
     option.setAttribute('aria-checked', String(presetId === selectedStartPreset));
     option.innerHTML = `<strong>${preset.title}</strong>`;
